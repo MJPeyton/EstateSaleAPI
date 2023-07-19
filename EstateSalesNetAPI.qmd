@@ -5,7 +5,17 @@ format: html
 
 ## API Documentation
 
-https://www.estatesales.net/api/sale-details
+TO DO:
+[ ] Pretty Output
+    [ ] Title and description
+    [ ] URL clickable
+    [ ] Sortable (probably reactable instead of GT)
+[ ] Map
+    [ ] Driving distance instead of as the crow flies
+    [ ] Map above/below?
+        [ ] Hover
+    [ ] Drive time at start dt
+[ ] Shiny?
 
 ```{r}
 
@@ -13,20 +23,21 @@ library(tidyverse)
 library(httr)
 library(glue)
 library(tidygeocoder)#install.packages('tidygeocoder')
+library(geosphere)
 
 address <- "946 N Lombard Ave Oak Park, IL"
 
 geoCode <- geo(address, method = 'osm', lat = latitude , long = longitude)
 
-lat <- geoCode$latitude
+homeLat <- geoCode$latitude
 
-lon <- geoCode$longitude
+homeLon <- geoCode$longitude
     
 distance <- 10
 
 query <- 
     GET(
-        url = glue("https://www.estatesales.net/api/sale-details?bypass=bycoordinatesanddistance:{lat}_{lon}_{distance}&include=saleschedule&select=id,url,address,stateCode,cityName,postalCodeNumber,primaryMetroAreaId,latitude,longitude,utcOffset,observesDaylightSavingTime,type,isMarketplaceSale,isLocallyFeatured,isRegionallyFeaturedThisWeek,isNationallyFeaturedThisWeek,firstUtcStartDate,firstLocalStartDate,lastUtcEndDate,lastLocalEndDate,activeLocalStartDate,tomorrowActiveLocalStartDate,utcDateFirstPublished,utcShowAddressAfter,orgPackageType,saleSchedule&explicitTypes=DateTime"))
+        url = glue("https://www.estatesales.net/api/sale-details?bypass=bycoordinatesanddistance:{homeLat}_{homeLon}_{distance}&include=saleschedule&select=id,url,address,crimeWorriesAddress,name,stateCode,cityName,postalCodeNumber,primaryMetroAreaId,latitude,longitude,utcOffset,observesDaylightSavingTime,type,isMarketplaceSale,isLocallyFeatured,isRegionallyFeaturedThisWeek,isNationallyFeaturedThisWeek,firstUtcStartDate,firstLocalStartDate,lastUtcEndDate,lastLocalEndDate,activeLocalStartDate,tomorrowActiveLocalStartDate,utcDateFirstPublished,utcShowAddressAfter,orgPackageType,saleSchedule&explicitTypes=DateTime"))
 
 response <- content(query)
 
@@ -46,7 +57,9 @@ for (i in 1:length(response)) {
             published = response[[i]]$utcDateFirstPublished$`_value`,
             showAddress = ifelse(is.null(response[[i]]$utcShowAddressAfter$`_value`), "NULL", response[[i]]$utcShowAddressAfter$`_value`),
             package = response[[i]]$orgPackageTypeName,
-            url = response[[i]]$url
+            url = response[[i]]$url,
+            name = response[[i]]$name,
+            description = ifelse(is.null(response[[i]]$htmlDescription), "NULL", response[[i]]$htmlDescription)
             )
     
     responseTable[[i]] <- temp
@@ -58,13 +71,30 @@ responseOutput <-
     bind_rows() |> 
     print()
 
+responseOutputCoded <- 
+    reverse_geocode(responseOutput, lat = "lat", long = "lon")
+
+cleanOutput <-
+    responseOutputCoded |> 
+    mutate(startDate = str_split_i(start, "T", 1), .after = start) |> 
+    mutate(endDate = str_split_i(end, "T", 1), .after = end) |> 
+    arrange(startDate) |> 
+    filter(endDate > today()) |> 
+    filter(startDate <= today() + days(7)) |> 
+    filter(type %in% c('EstateSales', 'MovingSales')) |> 
+    mutate(url = paste0("https://www.estatesales.net", url))
+
+cleanOutput |> 
+    rowwise() |> 
+    mutate(distance = distm(c(homeLon, homeLat), c(lon, lat), fun = distHaversine)) |> 
+    mutate(distance = round(distance / 1609.34, digits = 1)) |> 
+    select(startDate, endDate, distance, url)
+
 ```
 
 ```{r}
 
-responseOutputCoded <- reverse_geocode(responseOutput, lat = "lat", long = "lon")
-    
-responseOutputCoded
+response[[43]]
 
 ```
 
